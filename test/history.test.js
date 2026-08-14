@@ -4,7 +4,47 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { readSessionMeta, listSessions, isSessionFile } from '../src/history.js';
+import { readSessionMeta, listSessions, isSessionFile, LIVE_WINDOW_MS } from '../src/history.js';
+
+/**
+ * Resuming a conversation that is already running elsewhere starts a second process
+ * writing the same transcript. The panel can see the sessions it started itself, but
+ * not one you launched from a terminal, so freshness of the log is the only signal
+ * available that somebody else is already in there.
+ */
+describe('detecting a session that is already running', () => {
+  const recent = (o) => JSON.stringify(o) + '\n';
+
+  test('flags a session whose log was written moments ago', () => {
+    const now = Date.UTC(2026, 7, 14, 12, 0, 0);
+    const file = writeSession('E--Programs-demo', UUID_A, [
+      recent({ type: 'user', sessionId: UUID_A, cwd: 'E:\\demo', timestamp: new Date(now - 5_000).toISOString() }),
+    ]);
+    return readSessionMeta(file, { now }).then((meta) => {
+      assert.equal(meta.likelyLive, true);
+    });
+  });
+
+  test('does not flag a session last touched hours ago', () => {
+    const now = Date.UTC(2026, 7, 14, 12, 0, 0);
+    const file = writeSession('E--Programs-demo', UUID_A, [
+      recent({ type: 'user', sessionId: UUID_A, cwd: 'E:\\demo', timestamp: new Date(now - 3 * 3600_000).toISOString() }),
+    ]);
+    return readSessionMeta(file, { now }).then((meta) => {
+      assert.equal(meta.likelyLive, false);
+    });
+  });
+
+  test('treats activity exactly at the edge of the window as stale', () => {
+    const now = Date.UTC(2026, 7, 14, 12, 0, 0);
+    const file = writeSession('E--Programs-demo', UUID_A, [
+      recent({ type: 'user', sessionId: UUID_A, cwd: 'E:\\demo', timestamp: new Date(now - LIVE_WINDOW_MS - 1).toISOString() }),
+    ]);
+    return readSessionMeta(file, { now }).then((meta) => {
+      assert.equal(meta.likelyLive, false);
+    });
+  });
+});
 
 let root;
 

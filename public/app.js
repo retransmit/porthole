@@ -16,6 +16,7 @@ const els = {
   drawer: $('drawer'), drawerBody: $('drawerBody'), drawerClose: $('drawerClose'), crumbs: $('crumbs'),
   toasts: $('toasts'), newSheet: $('newSheet'), newForm: $('newForm'), newCwd: $('newCwd'), newLabel: $('newLabel'),
   fitToggle: $('fitToggle'),
+  askSheet: $('askSheet'), askTitle: $('askTitle'), askBody: $('askBody'), askYes: $('askYes'),
 };
 
 const state = {
@@ -355,7 +356,12 @@ async function loadHistory() {
 
     const sub = document.createElement('span');
     sub.className = 'slot-sub';
-    sub.textContent = `${new Date(h.lastActivityAt).toLocaleDateString()}  ${h.cwd?.split(/[\\/]/).pop() ?? ''}`;
+    const where = h.cwd?.split(/[\\/]/).pop() ?? '';
+    // Say so up front, rather than only refusing once they have clicked.
+    sub.textContent = h.likelyLive
+      ? `open elsewhere  ${where}`
+      : `${new Date(h.lastActivityAt).toLocaleDateString()}  ${where}`;
+    if (h.likelyLive) lamp.dataset.alive = 'true';
 
     btn.append(lamp, name, sub);
     btn.onclick = () => resume(h);
@@ -364,15 +370,29 @@ async function loadHistory() {
   }
 }
 
-async function resume(h) {
+async function resume(h, force = false) {
   toast(`Resuming ${h.title}`);
   try {
     const res = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cwd: h.cwd, label: h.title.slice(0, 40), resumeId: h.sessionId }),
+      body: JSON.stringify({ cwd: h.cwd, label: h.title.slice(0, 40), resumeId: h.sessionId, force }),
     });
     const data = await res.json();
+
+    // The server refuses by default when the conversation looks like it is already
+    // open somewhere else, because a second copy would write the same transcript.
+    if (res.status === 409 && data.code === 'already-live') {
+      const go = await ask(
+        'Already open somewhere else',
+        `"${h.title}" was written to moments ago, so something is probably still in it. ` +
+          'Opening a second copy means two Claude sessions appending to the same transcript.',
+        'Open it anyway',
+      );
+      if (go) return resume(h, true);
+      return toast('Left it alone');
+    }
+
     if (!res.ok) return toast(data.error ?? 'Could not resume', 'warn');
     attach(data.session.id);
     loadHistory();
@@ -579,6 +599,20 @@ async function loadDiff() {
 }
 
 /* ---------- chrome ---------- */
+
+/**
+ * A confirmation the page owns. Deliberately not window.confirm, which blocks the
+ * whole page and stalls anything driving the browser.
+ */
+function ask(title, body, confirmLabel = 'Continue') {
+  return new Promise((resolve) => {
+    els.askTitle.textContent = title;
+    els.askBody.textContent = body;
+    els.askYes.textContent = confirmLabel;
+    els.askSheet.addEventListener('close', () => resolve(els.askSheet.returnValue === 'yes'), { once: true });
+    els.askSheet.showModal();
+  });
+}
 
 function toast(message, kind = 'info') {
   const el = document.createElement('div');

@@ -475,6 +475,7 @@ button, input, textarea { font-family: inherit; font-size: inherit; color: inher
   font-family: var(--mono); font-size: .8rem;
 }
 .sheet-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.ask-body { margin: 0 0 1rem; color: var(--fathom); font-size: .85rem; line-height: 1.5; }
 
 /* ---------- rail toggle, hidden on desktop ---------- */
 

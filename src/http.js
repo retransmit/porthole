@@ -160,6 +160,21 @@ export function createHttpServer({
     if (route === 'sessions' && req.method === 'POST') {
       if (!can(role, 'create')) return json(res, 403, { error: 'admin required' });
       const body = await readBody(req);
+
+      // Resuming a conversation that is already open elsewhere starts a second process
+      // appending to the same transcript. The manager can only see sessions it started
+      // itself, so a session launched from a terminal would otherwise be resumed
+      // straight over the top of itself.
+      if (body.resumeId && !body.force) {
+        const known = (await listSessions({ limit: 200 })).find((s) => s.sessionId === body.resumeId);
+        if (known?.likelyLive) {
+          return json(res, 409, {
+            code: 'already-live',
+            error: 'That conversation looks like it is already open somewhere else. Resuming would run a second copy writing the same transcript.',
+          });
+        }
+      }
+
       try {
         const rec = await options.createSession({ ...body, by: identity.label });
         log(`${identity.label} created session ${rec.id} in ${rec.cwd}`);

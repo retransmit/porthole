@@ -17,6 +17,16 @@ const SESSION_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export const DEFAULT_HEAD_BYTES = 16 * 1024;
 export const DEFAULT_TAIL_BYTES = 64 * 1024;
 
+/**
+ * How recently a conversation must have been written to assume somebody is still in it.
+ *
+ * Resuming a session that is already running starts a second process appending to the
+ * same transcript. The panel knows about the sessions it started itself, but not one
+ * launched from a terminal, and a live session writes to its log constantly, so
+ * freshness is the only signal available.
+ */
+export const LIVE_WINDOW_MS = 90_000;
+
 export function defaultProjectsDir() {
   return process.env.PORTHOLE_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects');
 }
@@ -61,7 +71,10 @@ const titleOf = (records) => {
 /**
  * @returns {Promise<{sessionId, cwd, title, lastPrompt, startedAt, lastActivityAt, sizeBytes, projectDir, file, resumable}>}
  */
-export async function readSessionMeta(file, { headBytes = DEFAULT_HEAD_BYTES, tailBytes = DEFAULT_TAIL_BYTES } = {}) {
+export async function readSessionMeta(
+  file,
+  { headBytes = DEFAULT_HEAD_BYTES, tailBytes = DEFAULT_TAIL_BYTES, now = Date.now() } = {},
+) {
   const stat = await fsp.stat(file);
   const fallbackId = path.basename(file, '.jsonl');
 
@@ -97,8 +110,10 @@ export async function readSessionMeta(file, { headBytes = DEFAULT_HEAD_BYTES, ta
   const lastPrompt = tailNames.prompt ?? headNames.prompt;
 
   const cwd = withCwd?.cwd ?? null;
+  const lastActivityAt = timestamps.length ? Math.max(...timestamps) : stat.mtimeMs;
 
   return {
+    likelyLive: now - lastActivityAt < LIVE_WINDOW_MS,
     file,
     projectDir: path.basename(path.dirname(file)),
     sessionId: all.find((r) => typeof r.sessionId === 'string')?.sessionId ?? fallbackId,
@@ -112,7 +127,7 @@ export async function readSessionMeta(file, { headBytes = DEFAULT_HEAD_BYTES, ta
     gitBranch: withCwd?.gitBranch ?? null,
     version: withCwd?.version ?? null,
     startedAt: timestamps.length ? Math.min(...timestamps) : stat.birthtimeMs,
-    lastActivityAt: timestamps.length ? Math.max(...timestamps) : stat.mtimeMs,
+    lastActivityAt,
     sizeBytes: stat.size,
   };
 }
