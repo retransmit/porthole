@@ -57,6 +57,18 @@ after(async () => {
   fs.rmSync(stateDir, { recursive: true, force: true });
 });
 
+/** Opens a handshake with arbitrary headers, to exercise the hijack shapes directly. */
+function openRaw(headers) {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers });
+    ws.on('error', (err) => resolve({ accepted: false, error: err.message }));
+    ws.on('open', () => {
+      ws.close();
+      resolve({ accepted: true });
+    });
+  });
+}
+
 function open(token) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { authorization: `Bearer ${token}` } });
@@ -85,6 +97,46 @@ describe('websocket transport', () => {
       ws.on('open', () => { ws.close(); resolve(false); });
     });
     assert.equal(refused, true);
+  });
+
+  test('refuses a handshake from a foreign origin carrying a valid cookie', async () => {
+    // The cross-site websocket hijack: a page elsewhere opens a socket, the browser
+    // attaches the panel cookie by itself, and without an origin check that page
+    // inherits whatever role the cookie holds.
+    const out = await openRaw({
+      origin: 'http://evil.example',
+      cookie: `porthole=${config.adminToken}`,
+    });
+    assert.equal(out.accepted, false, 'a foreign origin must not get a socket');
+    assert.match(out.error, /403/);
+  });
+
+  test('refuses a foreign origin even when it presents a valid bearer token', async () => {
+    const out = await openRaw({
+      origin: 'http://evil.example',
+      authorization: `Bearer ${config.adminToken}`,
+    });
+    assert.equal(out.accepted, false);
+  });
+
+  test('refuses a cookie-only handshake that sends no origin at all', async () => {
+    const out = await openRaw({ cookie: `porthole=${config.adminToken}` });
+    assert.equal(out.accepted, false, 'an ambient cookie is not proof the user meant to connect');
+  });
+
+  test('accepts the panel own page, which sends a matching origin and the cookie', async () => {
+    const out = await openRaw({
+      origin: `http://127.0.0.1:${port}`,
+      cookie: `porthole=${config.adminToken}`,
+    });
+    assert.equal(out.accepted, true);
+  });
+
+  test('accepts a native client that sends a bearer token and no origin', async () => {
+    // A page cannot set the Authorization header on a websocket handshake, so this
+    // admits real API and mobile clients without admitting a hijack.
+    const out = await openRaw({ authorization: `Bearer ${config.adminToken}` });
+    assert.equal(out.accepted, true);
   });
 
   test('handles messages sent immediately on open, before welcome arrives', async () => {
@@ -214,6 +266,44 @@ describe('http api', () => {
       body: JSON.stringify({ cwd: 'C:/x' }),
     });
     assert.equal(res.status, 403);
+  });
+
+  test('refuses a state-changing post from a foreign origin', async () => {
+    // A cross-origin POST with content-type text/plain is a simple request, so it
+    // never triggers a preflight. The reply is opaque to the attacker, but a session
+    // would still have been started.
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.adminToken}`,
+        'content-type': 'text/plain',
+        origin: 'http://evil.example',
+      },
+      body: JSON.stringify({ cwd: 'C:/x', label: 'csrf' }),
+    });
+    assert.equal(res.status, 403);
+    assert.ok(!manager.list().some((s) => s.label === 'csrf'), 'no session may be created');
+  });
+
+  test('allows a state-changing post from the panel own origin', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.adminToken}`,
+        'content-type': 'application/json',
+        origin: `http://127.0.0.1:${port}`,
+      },
+      body: JSON.stringify({ cwd: 'C:/x', label: 'same-origin' }),
+    });
+    assert.equal(res.status, 201);
+    manager.kill((await res.json()).session.id);
+  });
+
+  test('still serves reads to a foreign origin, since cors keeps the reply unreadable', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      headers: { authorization: `Bearer ${config.adminToken}`, origin: 'http://evil.example' },
+    });
+    assert.equal(res.status, 200);
   });
 
   test('refuses a hook post carrying the wrong secret', async () => {

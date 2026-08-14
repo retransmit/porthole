@@ -87,6 +87,17 @@ async function start() {
   }
 
   const publicHost = self?.dnsName ?? bind.host;
+
+  // Origins a handshake may legitimately come from. The tailnet name is included
+  // because `tailscale serve` terminates TLS in front of us and the Host header it
+  // forwards need not match the name the browser used.
+  const tailnetName = self?.dnsName?.replace(/\.$/, '') ?? null;
+  const allowedOrigins = [
+    tailnetName,
+    tailnetName ? `${tailnetName}:${port}` : null,
+    `${bind.host}:${port}`,
+    ...String(flag('allow-origin', '')).split(',').map((s) => s.trim()).filter(Boolean),
+  ].filter(Boolean);
   const inviteUrl = (token) =>
     buildUrl({ host: bind.host, port, dnsName: bind.reason === 'tailscale' ? self?.dnsName : null, token });
 
@@ -97,6 +108,7 @@ async function start() {
     notifier,
     hookToken,
     log,
+    allowedOrigins,
     options: { createSession, inviteUrl, publicUrl: publicHost },
   });
 
@@ -105,6 +117,7 @@ async function start() {
     config,
     manager,
     log,
+    allowedOrigins,
     flags: () => ({ viewersCanBrowseFiles: config.viewersCanBrowseFiles }),
   });
 

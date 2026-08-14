@@ -7,8 +7,77 @@ import {
   parseCookies,
   serializeCookie,
   extractToken,
+  checkHandshakeOrigin,
   RateLimiter,
 } from '../src/auth.js';
+
+/**
+ * WebSockets are not covered by CORS, and browsers attach cookies to a handshake from
+ * any origin. Without this check a page on another tailnet host could open a socket to
+ * the panel, ride the operator's cookie, and inherit their role.
+ */
+describe('checkHandshakeOrigin()', () => {
+  const req = (headers) => ({ headers });
+
+  test('accepts a handshake whose origin matches the host it was sent to', () => {
+    const out = checkHandshakeOrigin(req({ origin: 'http://dexel.ts.net:7317', host: 'dexel.ts.net:7317' }));
+    assert.equal(out.ok, true);
+  });
+
+  test('refuses a handshake from a different origin', () => {
+    const out = checkHandshakeOrigin(req({ origin: 'http://evil.example:80', host: 'dexel.ts.net:7317' }));
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'origin');
+  });
+
+  test('refuses another host on the same tailnet, which lax cookies would not stop', () => {
+    const out = checkHandshakeOrigin(req({ origin: 'http://friend.tailfe839d.ts.net', host: 'dexel.tailfe839d.ts.net:7317' }));
+    assert.equal(out.ok, false);
+  });
+
+  test('treats a differing port as a different origin', () => {
+    const out = checkHandshakeOrigin(req({ origin: 'http://dexel.ts.net:9999', host: 'dexel.ts.net:7317' }));
+    assert.equal(out.ok, false);
+  });
+
+  test('refuses the opaque null origin used by sandboxed frames', () => {
+    assert.equal(checkHandshakeOrigin(req({ origin: 'null', host: 'dexel.ts.net:7317' })).ok, false);
+  });
+
+  test('refuses an unparseable origin', () => {
+    assert.equal(checkHandshakeOrigin(req({ origin: '://nonsense', host: 'dexel.ts.net:7317' })).ok, false);
+  });
+
+  test('accepts an extra host the operator allowed, for an https front end', () => {
+    // `tailscale serve` terminates TLS and may not preserve the original Host header.
+    const out = checkHandshakeOrigin(
+      req({ origin: 'https://dexel.tailfe839d.ts.net', host: '127.0.0.1:7317' }),
+      ['dexel.tailfe839d.ts.net'],
+    );
+    assert.equal(out.ok, true);
+  });
+
+  test('allows a non-browser client that presents a bearer token and no origin', () => {
+    // Native clients send no Origin, and cannot be made to by an attacker's page.
+    const out = checkHandshakeOrigin(req({ host: 'dexel.ts.net:7317', authorization: 'Bearer abc' }));
+    assert.equal(out.ok, true);
+  });
+
+  test('refuses a handshake with no origin that relies on an ambient cookie', () => {
+    // This is the shape a hijack takes if the browser omits Origin: no proof of intent,
+    // just a cookie the browser attached on its own.
+    const out = checkHandshakeOrigin(req({ host: 'dexel.ts.net:7317', cookie: 'porthole=abc' }));
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'no-origin');
+  });
+
+  test('a bearer token does not excuse a mismatched origin', () => {
+    const out = checkHandshakeOrigin(
+      req({ origin: 'http://evil.example', host: 'dexel.ts.net:7317', authorization: 'Bearer abc' }),
+    );
+    assert.equal(out.ok, false);
+  });
+});
 
 describe('can()', () => {
   test('view role cannot send input', () => {

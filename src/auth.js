@@ -97,6 +97,46 @@ export function extractToken(req) {
   return null;
 }
 
+/**
+ * Decide whether a WebSocket handshake is allowed to proceed.
+ *
+ * WebSockets are not subject to CORS, and a browser attaches cookies to a handshake
+ * regardless of which page opened it. SameSite=Lax helps, but it is scoped to the
+ * registrable domain, and every machine on a tailnet shares one. A page served from
+ * another tailnet host can therefore be same-site with the panel, so a viewer could
+ * host a page, have the operator open it, and ride the operator's cookie into an admin
+ * socket. Cookies alone are not proof that the user meant to connect.
+ *
+ * The rule:
+ *   - Origin present  ->  it must match the host, or a host the operator allowed.
+ *   - Origin absent   ->  only allowed with a bearer token. Native clients send no
+ *                         Origin, and an attacker's page cannot set that header, so
+ *                         this admits real API clients without admitting hijacks.
+ *
+ * @returns {{ok: boolean, reason: string|null}}
+ */
+export function checkHandshakeOrigin(req, extraHosts = []) {
+  const headers = req?.headers ?? {};
+  const origin = headers.origin;
+
+  if (!origin) {
+    const bearer = typeof headers.authorization === 'string' && /^bearer\s+\S/i.test(headers.authorization.trim());
+    return bearer ? { ok: true, reason: null } : { ok: false, reason: 'no-origin' };
+  }
+
+  let originHost;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    // Covers the literal "null" origin from sandboxed frames and anything malformed.
+    return { ok: false, reason: 'origin' };
+  }
+  if (!originHost) return { ok: false, reason: 'origin' };
+
+  const allowed = new Set([headers.host, ...extraHosts].filter(Boolean));
+  return allowed.has(originHost) ? { ok: true, reason: null } : { ok: false, reason: 'origin' };
+}
+
 /** Sliding-window failure counter, keyed by source address. */
 export class RateLimiter {
   constructor({ limit = 10, windowMs = 60_000, now = () => Date.now() } = {}) {

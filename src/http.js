@@ -4,7 +4,15 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { COOKIE_NAME, RateLimiter, can, extractToken, serializeCookie, safeEqual } from './auth.js';
+import {
+  COOKIE_NAME,
+  RateLimiter,
+  can,
+  checkHandshakeOrigin,
+  extractToken,
+  serializeCookie,
+  safeEqual,
+} from './auth.js';
 import { mintInvite, resolveToken, revokeInvite, saveConfig } from './config.js';
 import { listSessions } from './history.js';
 import { listDir, readTextFile } from './files.js';
@@ -95,8 +103,28 @@ printed when the panel started.</p></div>`;
 /**
  * @param {{config, stateDir, manager, notifier, hookToken, options, log}} deps
  */
-export function createHttpServer({ config, stateDir, manager, notifier, hookToken, options = {}, log = () => {} }) {
+export function createHttpServer({
+  config,
+  stateDir,
+  manager,
+  notifier,
+  hookToken,
+  options = {},
+  log = () => {},
+  allowedOrigins = [],
+}) {
   const limiter = new RateLimiter({ limit: 12, windowMs: 60_000 });
+
+  /**
+   * Anything that changes state has to prove the request was meant for us.
+   *
+   * A cross-origin POST carrying content-type text/plain is a simple request, so it
+   * skips the CORS preflight entirely, and the body is still valid JSON on arrival.
+   * The attacker cannot read the reply, but the side effect lands, which for endpoints
+   * that start shells is the part that matters.
+   */
+  const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  const mutationAllowed = (req) => !MUTATING.has(req.method) || checkHandshakeOrigin(req, allowedOrigins).ok;
 
   const flags = () => ({ viewersCanBrowseFiles: config.viewersCanBrowseFiles === true });
 
@@ -267,6 +295,11 @@ export function createHttpServer({ config, stateDir, manager, notifier, hookToke
     }
 
     if (limiter.blocked(peer)) return text(res, 429, 'too many failed attempts, wait a minute');
+
+    if (!mutationAllowed(req)) {
+      log(`refused ${req.method} ${url.pathname} from origin ${req.headers.origin ?? '(none)'}`);
+      return json(res, 403, { error: 'this request did not come from the panel' });
+    }
 
     const presented = extractToken(req);
     const identity = presented ? resolveToken(config, presented) : null;

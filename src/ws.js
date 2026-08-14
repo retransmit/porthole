@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
-import { can, extractToken } from './auth.js';
+import { can, checkHandshakeOrigin, extractToken } from './auth.js';
 import { resolveToken } from './config.js';
 import { normaliseRemoteAddress, tailscaleWhois } from './net.js';
 
@@ -18,11 +18,28 @@ const MAX_MESSAGE_BYTES = 1024 * 1024;
  * number handed out at attach time, which avoids repeating a 36 character session uuid
  * on every chunk of a hot stream.
  */
-export function attachWebSocket({ server, config, manager, log = () => {}, flags = () => ({}) }) {
+export function attachWebSocket({
+  server,
+  config,
+  manager,
+  log = () => {},
+  flags = () => ({}),
+  allowedOrigins = [],
+}) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const clients = new Set();
 
   server.on('upgrade', (req, socket, head) => {
+    // Checked before the credential, because a hijacked handshake carries a perfectly
+    // valid cookie. See checkHandshakeOrigin for why a cookie is not proof of intent.
+    const origin = checkHandshakeOrigin(req, allowedOrigins);
+    if (!origin.ok) {
+      log(`refused websocket from origin ${req.headers.origin ?? '(none)'}: ${origin.reason}`);
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     const token = extractToken(req);
     const identity = token ? resolveToken(config, token) : null;
 
