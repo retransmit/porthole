@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
 
 import * as pty from '@lydell/node-pty';
 // These three ship as CommonJS. Under ESM they must come in as default imports.
@@ -11,6 +12,35 @@ const { SerializeAddon } = serializePkg;
 const { Unicode11Addon } = unicode11Pkg;
 
 export const DEFAULT_SCROLLBACK = 5000;
+
+/**
+ * Stop the child we started, and nothing else.
+ *
+ * Deliberately NOT node-pty's own `kill()`. On Windows that path forks a helper, calls
+ * AttachConsole against the child's pid, asks the OS for every process sharing that
+ * console, and then process.kill()s all of them. Worse, it does that inside a `.then()`
+ * which resolves after the child has already been terminated, so if Windows reissued
+ * the pid in the gap it enumerates a stranger's console and kills those processes
+ * instead.
+ *
+ * That is not theoretical. It killed unrelated Claude Code sessions on this machine
+ * during development, under exactly the process churn that makes pid reuse likely.
+ *
+ * `taskkill /T` is scoped to one pid and its descendants, which is the blast radius we
+ * actually want: the session's own shell plus anything it started, such as MCP servers.
+ * It runs synchronously so there is no window between deciding and acting.
+ */
+function killChildTree(pid) {
+  try {
+    execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      timeout: 5000,
+      stdio: 'ignore',
+    });
+  } catch {
+    // Non-zero exit just means the process had already gone.
+  }
+}
 
 /**
  * Release the ConPTY plumbing node-pty leaves behind when a child exits by itself.
@@ -175,12 +205,33 @@ export class Session extends EventEmitter {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    if (this.pty) {
+
+    // Only act while node-pty still reports a live child. Once it has exited, `pty` is
+    // null and the operating system may already have reissued that pid to somebody else.
+    const term = this.pty;
+    if (!term || !this.alive) return;
+
+    if (process.platform !== 'win32') {
+      // On Linux and macOS node-pty signals the child's own process group, which is
+      // already scoped correctly. The hazard described on killChildTree is specific to
+      // the Windows console model, so there is nothing to work around here.
       try {
-        this.pty.kill();
+        term.kill();
       } catch {
         // Already gone.
       }
+      return;
+    }
+
+    killChildTree(term.pid);
+
+    // Release the pseudoconsole directly. This is the safe half of node-pty's Windows
+    // kill(); the half being avoided is the console enumeration described above.
+    try {
+      const agent = term._agent;
+      agent?._ptyNative?.kill?.(agent._pty, agent._useConptyDll);
+    } catch {
+      // Already gone.
     }
   }
 
