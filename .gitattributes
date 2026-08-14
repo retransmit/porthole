@@ -1,0 +1,5 @@
+# Keep line endings stable across machines and stop Git warning on every add.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
