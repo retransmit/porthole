@@ -52,9 +52,6 @@ fun ScanScreen(autoPairUri: String? = null, onCancel: () -> Unit, onPaired: (Pan
     var manualCode by remember { mutableStateOf("") }
     var manualHost by remember { mutableStateOf("") }
 
-    // Declared before use by the auto-pair effect below.
-    var pairRequest by remember { mutableStateOf<String?>(autoPairUri) }
-
     var hasCamera by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
@@ -89,11 +86,12 @@ fun ScanScreen(autoPairUri: String? = null, onCancel: () -> Unit, onPaired: (Pan
     }
 
     // A pairing link opened from elsewhere pairs straight away.
-    LaunchedEffect(pairRequest) {
-        pairRequest?.let { uri ->
-            pairRequest = null
-            pair(uri)
-        }
+    //
+    // Keyed on the uri itself. Holding it in `remember` instead captured only the first
+    // value, so a second link arriving while this screen was already open was ignored,
+    // which is exactly what happens when the app is already running.
+    LaunchedEffect(autoPairUri) {
+        autoPairUri?.let { pair(it) }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {

@@ -1,3 +1,7 @@
+// Must precede the plugins block. Unqualified, because in the Kotlin DSL a bare
+// `java.util.Properties` resolves against Gradle's own `java` extension instead.
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,9 +9,34 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+/**
+ * Release signing, read from a file that is never committed.
+ *
+ * The app stores a token that can run commands on your desktop, so a release build
+ * matters beyond tidiness: a debug build is `debuggable`, which lets anything with ADB
+ * read that token straight out of the app's memory.
+ *
+ * Builds without the file still work, they just produce an unsigned release.
+ */
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
 android {
     namespace = "net.porthole"
     compileSdk = 35
+
+    signingConfigs {
+        if (keystoreProperties.containsKey("storeFile")) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "net.porthole"
@@ -24,6 +53,9 @@ android {
         }
         release {
             isMinifyEnabled = false
+            if (keystoreProperties.containsKey("storeFile")) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
