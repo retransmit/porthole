@@ -132,7 +132,7 @@ export function saveConfig(dir, cfg) {
   return file;
 }
 
-export function mintInvite(cfg, { role = 'view', label = '', expiresAt = null } = {}) {
+export function mintInvite(cfg, { role = 'view', label = '', expiresAt = null, canCreate = false } = {}) {
   if (!INVITE_ROLES.has(role)) {
     throw new Error(`invalid invite role "${role}", expected one of: ${[...INVITE_ROLES].join(', ')}`);
   }
@@ -144,6 +144,8 @@ export function mintInvite(cfg, { role = 'view', label = '', expiresAt = null } 
     createdAt: Date.now(),
     expiresAt,
     revoked: false,
+    // Off unless asked for. See GRANTABLE in auth.js for why this is separate from role.
+    grants: canCreate && role === 'control' ? ['create'] : [],
   };
   cfg.invites.push(invite);
   return invite;
@@ -163,14 +165,19 @@ export function resolveToken(cfg, token, { now = Date.now() } = {}) {
   if (typeof token !== 'string' || token.length === 0) return null;
 
   if (safeEqual(token, cfg.adminToken)) {
-    return { role: 'admin', label: 'admin', id: 'admin' };
+    return { role: 'admin', label: 'admin', id: 'admin', grants: [] };
   }
 
   for (const invite of cfg.invites) {
     if (invite.revoked) continue;
     if (!safeEqual(token, invite.token)) continue;
     if (invite.expiresAt != null && now > invite.expiresAt) return null;
-    return { role: invite.role, label: invite.label, id: invite.id };
+    return {
+      role: invite.role,
+      label: invite.label,
+      id: invite.id,
+      grants: Array.isArray(invite.grants) ? invite.grants : [],
+    };
   }
 
   return null;

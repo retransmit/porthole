@@ -145,9 +145,9 @@ export function createHttpServer({
         role,
         label: identity.label,
         caps: {
-          files: can(role, 'files', flags()),
-          create: can(role, 'create'),
-          invite: can(role, 'invite'),
+          files: can(role, 'files', flags(), identity.grants),
+          create: can(role, 'create', flags(), identity.grants),
+          invite: can(role, 'invite', flags(), identity.grants),
           push: Boolean(notifier),
         },
         host: options.publicUrl ?? null,
@@ -159,7 +159,9 @@ export function createHttpServer({
     }
 
     if (route === 'sessions' && req.method === 'POST') {
-      if (!can(role, 'create')) return json(res, 403, { error: 'admin required' });
+      if (!can(role, 'create', flags(), identity.grants)) {
+        return json(res, 403, { error: 'this link is not allowed to start sessions' });
+      }
       const body = await readBody(req);
 
       // Resuming a conversation that is already open elsewhere starts a second process

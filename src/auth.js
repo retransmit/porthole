@@ -16,14 +16,37 @@ const CAPABILITIES = {
 export const ROLES = Object.keys(CAPABILITIES);
 
 /**
+ * Actions an individual invite may be granted beyond its role.
+ *
+ * Deliberately a whitelist of one. Starting a session means running a process on the
+ * host, which is the difference between lending someone a view of your work and lending
+ * them your machine. Your own phone should be able to; a friend's control link should
+ * not. Anything outside this set is ignored even if it somehow appears on an invite.
+ */
+const GRANTABLE = new Set(['create']);
+
+/** A grant is meaningless to a role that cannot even type. */
+const GRANTABLE_ROLES = new Set(['control', 'admin']);
+
+/**
  * @param {string} role
  * @param {string} action
  * @param {{viewersCanBrowseFiles?: boolean}} [flags] server-side config toggles
+ * @param {string[]} [grants] extra actions this specific invite was given
  */
-export function can(role, action, flags = {}) {
+export function can(role, action, flags = {}, grants = []) {
   const caps = CAPABILITIES[role];
   if (!caps) return false;
   if (caps.has(action)) return true;
+
+  if (
+    GRANTABLE.has(action) &&
+    GRANTABLE_ROLES.has(role) &&
+    Array.isArray(grants) &&
+    grants.includes(action)
+  ) {
+    return true;
+  }
   // The one capability an admin can hand to viewers. Sharing a terminal and sharing a
   // source tree are separate decisions, so this is opt-in rather than implied.
   if (action === 'files' && role === 'view' && flags.viewersCanBrowseFiles === true) return true;

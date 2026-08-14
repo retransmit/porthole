@@ -106,9 +106,9 @@ export function attachWebSocket({
       peer,
       sessions: manager.list(),
       caps: {
-        files: can(identity.role, 'files', flags()),
-        create: can(identity.role, 'create'),
-        invite: can(identity.role, 'invite'),
+        files: can(identity.role, 'files', flags(), identity.grants),
+        create: can(identity.role, 'create', flags(), identity.grants),
+        invite: can(identity.role, 'invite', flags(), identity.grants),
       },
     });
 

@@ -48,6 +48,7 @@ class PanelStore(context: Context) {
         const val IV_BYTES = 12
         const val TAG_BITS = 128
         const val BLOB = "blob"
+        const val LAST_USED = "lastUsed"
     }
 
     private fun secretKey(): SecretKey {
@@ -108,9 +109,27 @@ class PanelStore(context: Context) {
     fun add(panel: Panel) {
         // Pairing the same host twice replaces rather than duplicates it.
         persist(list().filterNot { it.host == panel.host && it.port == panel.port } + panel)
+        lastUsedId = panel.id
     }
 
-    fun remove(id: String) = persist(list().filterNot { it.id == id })
+    fun remove(id: String) {
+        persist(list().filterNot { it.id == id })
+        if (lastUsedId == id) lastUsedId = null
+    }
+
+    /**
+     * Which panel to reconnect to on launch.
+     *
+     * Without this the app connected to whichever panel happened to be first in the
+     * list, so pairing a second machine and reopening the app landed you on the wrong
+     * one, reporting its permissions and its history as though they were the new one's.
+     */
+    var lastUsedId: String?
+        get() = prefs.getString(LAST_USED, null)
+        set(value) = prefs.edit().putString(LAST_USED, value).apply()
+
+    /** The panel to open with: the last one used, else the only sensible fallback. */
+    fun preferred(): Panel? = list().firstOrNull { it.id == lastUsedId } ?: list().firstOrNull()
 
     fun get(id: String): Panel? = list().firstOrNull { it.id == id }
 

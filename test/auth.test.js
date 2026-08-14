@@ -125,6 +125,44 @@ describe('can()', () => {
   });
 });
 
+/**
+ * A friend's control link must never be able to start processes on the host. Your own
+ * phone should be able to. A per-invite grant separates the two without loosening the
+ * role itself, and only a fixed whitelist of actions can ever be granted this way.
+ */
+describe('can() with per-invite grants', () => {
+  test('control cannot create by default', () => {
+    assert.equal(can('control', 'create'), false);
+  });
+
+  test('a control invite granted create may create', () => {
+    assert.equal(can('control', 'create', {}, ['create']), true);
+  });
+
+  test('the grant does not carry any other admin power', () => {
+    assert.equal(can('control', 'kill', {}, ['create']), false);
+    assert.equal(can('control', 'invite', {}, ['create']), false);
+    assert.equal(can('control', 'admin', {}, ['create']), false);
+  });
+
+  test('a grant cannot smuggle in an action that is not grantable', () => {
+    // Anything outside the whitelist is ignored even if it appears in the invite.
+    assert.equal(can('control', 'invite', {}, ['invite', 'admin', 'kill']), false);
+  });
+
+  test('a view invite cannot be granted create, since it cannot even type', () => {
+    assert.equal(can('view', 'create', {}, ['create']), false);
+  });
+
+  test('grants never rescue an unknown role', () => {
+    assert.equal(can('nonsense', 'create', {}, ['create']), false);
+  });
+
+  test('admin is unaffected by grants', () => {
+    assert.equal(can('admin', 'create'), true);
+  });
+});
+
 describe('safeEqual()', () => {
   test('returns true for identical strings', () => {
     assert.equal(safeEqual('a'.repeat(64), 'a'.repeat(64)), true);

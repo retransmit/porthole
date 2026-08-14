@@ -85,15 +85,27 @@ class PanelService : Service() {
                 }
 
                 startForeground(ONGOING_ID, ongoingNotification(panel.name, connected = false))
-                PanelBus.panel.value = panel
 
+                // Clear anything belonging to the previous panel first. Otherwise its
+                // session list, role and helm linger on screen under the new panel's
+                // name, which reads as the new panel reporting someone else's state.
                 client?.disconnect()
+                PanelBus.reset()
+                PanelBus.panel.value = panel
+                // A socket that is on its way out still delivers a close callback, which
+                // would otherwise mark the newly connected panel as disconnected. Every
+                // callback is therefore ignored unless its panel is still the current one.
+                val forPanel = panel.id
+                val isCurrent = { PanelBus.panel.value?.id == forPanel }
+
                 client = PanelClient(
                     panel = panel,
-                    onEvent = ::handle,
+                    onEvent = { event -> if (isCurrent()) handle(event) },
                     onConnectionChange = { up ->
-                        PanelBus.connected.value = up
-                        notify(ONGOING_ID, ongoingNotification(panel.name, up))
+                        if (isCurrent()) {
+                            PanelBus.connected.value = up
+                            notify(ONGOING_ID, ongoingNotification(panel.name, up))
+                        }
                     },
                 ).also {
                     PanelBus.client = it
@@ -111,6 +123,7 @@ class PanelService : Service() {
             is PanelEvent.Welcome -> {
                 PanelBus.clientId.value = event.clientId
                 PanelBus.role.value = event.role
+                PanelBus.canCreate.value = event.canCreate
                 PanelBus.sessions.value = event.sessions
                 // Announce ourselves. A phone does not vote on terminal size until it is
                 // the only viewer; the terminal screen revises this once it knows.

@@ -189,7 +189,7 @@ async function pair() {
 
   let minted;
   try {
-    minted = mintPairingCode(config, { role, label });
+    minted = mintPairingCode(config, { role, label, canCreate: has('can-create') });
   } catch (err) {
     console.error(`could not create a pairing code: ${err.message}`);
     process.exit(1);
@@ -205,6 +205,7 @@ async function pair() {
   console.log(`  ${dim('code')}  ${bold(minted.code)}   ${dim('(if the camera will not focus)')}`);
   console.log(`  ${dim('panel')} ${host}:${port}`);
   console.log(`  ${dim('valid')} ${PAIRING_TTL_MS / 60000} minutes, one use only`);
+  if (minted.canCreate) console.log(`  ${dim('extra')} may start and resume sessions`);
   console.log('');
   if (minted.role === 'control') {
     console.log(`  ${yellow('!')} A control pairing can run commands on this machine as you.`);

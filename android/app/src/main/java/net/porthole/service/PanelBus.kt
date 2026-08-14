@@ -20,6 +20,12 @@ object PanelBus {
     val panel = MutableStateFlow<Panel?>(null)
     val sessions = MutableStateFlow<List<SessionInfo>>(emptyList())
     val role = MutableStateFlow("view")
+
+    /**
+     * Whether this pairing may start or resume sessions. Off for an ordinary control
+     * link, on for one paired with --can-create.
+     */
+    val canCreate = MutableStateFlow(false)
     val clientId = MutableStateFlow("")
     val helm = MutableStateFlow<String?>(null)
     val attention = MutableStateFlow<PanelEvent.Attention?>(null)
@@ -41,6 +47,9 @@ object PanelBus {
     fun reset() {
         connected.value = false
         sessions.value = emptyList()
+        role.value = "view"
+        canCreate.value = false
+        clientId.value = ""
         helm.value = null
         attention.value = null
         attached.value = null

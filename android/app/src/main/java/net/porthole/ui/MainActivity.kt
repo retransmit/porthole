@@ -28,9 +28,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.porthole.net.AlreadyLive
+import net.porthole.net.HistoryEntry
 import net.porthole.net.SessionInfo
 import net.porthole.net.claimPairing
+import net.porthole.net.fetchHistory
+import net.porthole.net.startSession
 import net.porthole.service.PanelBus
 import net.porthole.service.PanelService
 import net.porthole.store.Panel
@@ -96,9 +101,10 @@ private fun Root(launchIntent: Intent?) {
 
     // Connect to the first saved panel on launch, and follow a notification tap through
     // to the session it was about.
+    // Reconnect to the panel you were last on, not whichever happens to be first.
     LaunchedEffect(panels) {
-        if (panels.isNotEmpty() && activePanel == null) {
-            PanelService.start(context, panels.first().id)
+        if (activePanel == null) {
+            store.preferred()?.let { PanelService.start(context, it.id) }
         }
     }
     var autoPairUri by remember { mutableStateOf<String?>(null) }
@@ -125,7 +131,11 @@ private fun Root(launchIntent: Intent?) {
                 is Screen.Panels -> PanelsScreen(
                     panels = panels,
                     onScan = { screen = Screen.Scan },
-                    onPick = { p -> PanelService.start(context, p.id); screen = Screen.Sessions },
+                    onPick = { p ->
+                        store.lastUsedId = p.id
+                        PanelService.start(context, p.id)
+                        screen = Screen.Sessions
+                    },
                     onForget = { p -> store.remove(p.id); panels = store.list() },
                 )
 
@@ -263,25 +273,158 @@ private fun PanelsScreen(
 private fun SessionsScreen(onOpen: (String) -> Unit, onManagePanels: () -> Unit) {
     val sessions by PanelBus.sessions.collectAsStateWithLifecycle()
     val connected by PanelBus.connected.collectAsStateWithLifecycle()
+    val panel by PanelBus.panel.collectAsStateWithLifecycle()
+    val canCreate by PanelBus.canCreate.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        SectionLabel("Sessions")
+    var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
+    var confirmForce by remember { mutableStateOf<HistoryEntry?>(null) }
 
-        if (sessions.isEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                if (connected) "Nothing running on this panel yet."
-                else "Connecting to the panel…",
-                color = Hull.fathom,
-                fontSize = 14.sp,
+    // Refreshed whenever the live list changes, so a session that just ended reappears
+    // under Resume without needing the screen reopened.
+    LaunchedEffect(panel, sessions.size) {
+        val p = panel ?: return@LaunchedEffect
+        history = withContext(Dispatchers.IO) { fetchHistory(p) }
+    }
+
+    fun resume(entry: HistoryEntry, force: Boolean) {
+        val p = panel ?: return
+        val cwd = entry.cwd ?: return
+        busy = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                startSession(p, cwd, entry.title.take(40), resumeId = entry.sessionId, force = force)
+            }
+            busy = false
+            result.fold(
+                onSuccess = { onOpen(it) },
+                onFailure = { err ->
+                    if (err is AlreadyLive) confirmForce = entry
+                    else PanelBus.notice.value = err.message ?: "Could not resume it"
+                },
             )
         }
+    }
 
-        LazyColumn {
+    val running = sessions.map { it.id }.toSet()
+    val resumable = history.filter { it.resumable && it.sessionId !in running }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        LazyColumn(Modifier.fillMaxSize()) {
+            item { SectionLabel("Sessions") }
+
+            if (sessions.isEmpty()) {
+                item {
+                    Text(
+                        if (connected) "Nothing running on this panel yet."
+                        else "Connecting to the panel…",
+                        color = Hull.fathom,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(vertical = 6.dp),
+                    )
+                }
+            }
+
             items(sessions, key = { it.id }) { session ->
                 SessionRow(session) { onOpen(session.id) }
                 HorizontalDivider(color = Hull.rim)
             }
+
+            item { SectionLabel("Resume") }
+
+            if (!canCreate) {
+                item {
+                    Text(
+                        "This link can drive sessions but not start them. Pair again with " +
+                            "--can-create to resume from here.",
+                        color = Hull.fathomDim,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
+            } else if (resumable.isEmpty()) {
+                item {
+                    Text(
+                        "No past conversations yet. A session only becomes resumable " +
+                            "once it has been given a prompt.",
+                        color = Hull.fathomDim,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
+            }
+
+            items(resumable, key = { it.sessionId }) { entry ->
+                HistoryRow(entry, enabled = canCreate && !busy) { resume(entry, force = false) }
+                HorizontalDivider(color = Hull.rim)
+            }
+
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+
+    confirmForce?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { confirmForce = null },
+            containerColor = Hull.deck,
+            title = { Text("Already open?", color = Hull.foam) },
+            text = {
+                Text(
+                    "That conversation was written to moments ago, so it looks like it is " +
+                        "open somewhere else. Resuming runs a second copy writing the same " +
+                        "transcript.",
+                    color = Hull.fathom,
+                    fontSize = 13.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { val e = entry; confirmForce = null; resume(e, force = true) }) {
+                    Text("Resume anyway", color = Hull.port)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmForce = null }) { Text("Cancel", color = Hull.fathom) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun HistoryRow(entry: HistoryEntry, enabled: Boolean, onClick: () -> Unit) {
+    val ageMinutes = ((System.currentTimeMillis() - entry.lastActivityAt) / 60_000).coerceAtLeast(0)
+    val age = when {
+        ageMinutes < 60 -> "${ageMinutes}m ago"
+        ageMinutes < 60 * 24 -> "${ageMinutes / 60}h ago"
+        else -> "${ageMinutes / 1440}d ago"
+    }
+
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(9.dp).clip(CircleShape)
+                .background(if (entry.likelyLive) Hull.brass else Hull.fathomDim)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.title,
+                color = if (enabled) Hull.foam else Hull.fathomDim,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "$age   ${entry.cwd?.substringAfterLast('/') ?: ""}" +
+                    if (entry.likelyLive) "   open elsewhere" else "",
+                color = Hull.fathomDim,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -117,6 +118,98 @@ class PanelClient(
         onConnectionChange(false)
     }
 }
+
+/** A past conversation the panel offers to resume. */
+data class HistoryEntry(
+    val sessionId: String,
+    val title: String,
+    val cwd: String?,
+    val lastActivityAt: Long,
+    val resumable: Boolean,
+    val likelyLive: Boolean,
+)
+
+private val restClient by lazy {
+    OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
+}
+
+private fun authed(panel: Panel, url: String) =
+    Request.Builder().url(url).header("Authorization", "Bearer ${panel.token}")
+
+/**
+ * Past conversations, newest first.
+ *
+ * A session started by hand in a terminal cannot be adopted by the panel, so resuming
+ * from its transcript is the only way to reach it from a phone at all. That makes this
+ * list the difference between the app driving whatever happens to be running and the
+ * app reaching everything you have worked on.
+ */
+fun fetchHistory(panel: Panel, limit: Int = 40): List<HistoryEntry> = try {
+    restClient.newCall(authed(panel, "${panel.baseUrl}/api/history?limit=$limit").get().build())
+        .execute().use { response ->
+            if (!response.isSuccessful) return emptyList()
+            val obj = Json.parseToJsonElement(response.body?.string().orEmpty()) as JsonObject
+            obj["sessions"]?.jsonArray?.mapNotNull { element ->
+                val s = element as? JsonObject ?: return@mapNotNull null
+                HistoryEntry(
+                    sessionId = s["sessionId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null,
+                    title = s["title"]?.jsonPrimitive?.contentOrNull ?: "(untitled)",
+                    cwd = s["cwd"]?.jsonPrimitive?.contentOrNull,
+                    lastActivityAt = s["lastActivityAt"]?.jsonPrimitive?.content?.toDoubleOrNull()?.toLong() ?: 0L,
+                    resumable = s["resumable"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
+                    likelyLive = s["likelyLive"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
+                )
+            } ?: emptyList()
+        }
+} catch (_: Exception) {
+    emptyList()
+}
+
+/**
+ * Start a session, optionally resuming a past conversation.
+ *
+ * The panel answers 409 when the conversation looks like it is already open somewhere
+ * else, because resuming it would run a second process appending to the same transcript.
+ * That refusal is surfaced rather than swallowed, with `force` left to the caller.
+ */
+fun startSession(
+    panel: Panel,
+    cwd: String,
+    label: String,
+    resumeId: String? = null,
+    force: Boolean = false,
+): Result<String> = try {
+    val payload = buildString {
+        append("""{"cwd":""").append(JsonPrimitive(cwd))
+        append(""","label":""").append(JsonPrimitive(label))
+        if (resumeId != null) append(""","resumeId":""").append(JsonPrimitive(resumeId))
+        if (force) append(""","force":true""")
+        append("}")
+    }
+
+    restClient.newCall(
+        authed(panel, "${panel.baseUrl}/api/sessions")
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .build()
+    ).execute().use { response ->
+        val text = response.body?.string().orEmpty()
+        val obj = runCatching { Json.parseToJsonElement(text) as JsonObject }.getOrNull()
+        if (response.isSuccessful) {
+            val id = (obj?.get("session") as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
+            if (id != null) Result.success(id)
+            else Result.failure(IllegalStateException("the panel did not return a session"))
+        } else {
+            val code = obj?.get("code")?.jsonPrimitive?.contentOrNull
+            val message = obj?.get("error")?.jsonPrimitive?.contentOrNull ?: "could not start it (${response.code})"
+            Result.failure(if (code == "already-live") AlreadyLive(message) else IllegalStateException(message))
+        }
+    }
+} catch (e: Exception) {
+    Result.failure(e)
+}
+
+/** Distinct type so the UI can offer to force rather than just reporting a failure. */
+class AlreadyLive(message: String) : Exception(message)
 
 /**
  * Exchange a one-time pairing code for a real token.

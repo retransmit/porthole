@@ -35,7 +35,11 @@ function randomCode() {
 const canonical = (code) =>
   typeof code === 'string' ? code.toUpperCase().replace(/[^A-Z2-9]/g, '') : null;
 
-export function mintPairingCode(config, { role = 'view', label = 'phone' } = {}, { now = Date.now() } = {}) {
+export function mintPairingCode(
+  config,
+  { role = 'view', label = 'phone', canCreate = false } = {},
+  { now = Date.now() } = {},
+) {
   if (!PAIRING_ROLES.has(role)) {
     throw new Error(`invalid pairing role "${role}", expected one of: ${[...PAIRING_ROLES].join(', ')}`);
   }
@@ -52,10 +56,12 @@ export function mintPairingCode(config, { role = 'view', label = 'phone' } = {},
     createdAt: now,
     expiresAt: now + PAIRING_TTL_MS,
     claimed: false,
+    // Carried through to the invite the code is exchanged for.
+    canCreate: canCreate === true && role === 'control',
   };
   config.pairings.push(pairing);
 
-  return { code, expiresAt: pairing.expiresAt, role, label: pairing.label };
+  return { code, expiresAt: pairing.expiresAt, role, label: pairing.label, canCreate: pairing.canCreate };
 }
 
 /**
@@ -79,7 +85,11 @@ export function claimPairingCode(config, code, { now = Date.now() } = {}) {
     pairing.claimed = true;
     pairing.claimedAt = now;
 
-    const invite = mintInvite(config, { role: pairing.role, label: pairing.label });
+    const invite = mintInvite(config, {
+      role: pairing.role,
+      label: pairing.label,
+      canCreate: pairing.canCreate === true,
+    });
     return { token: invite.token, role: invite.role, label: invite.label };
   }
 
