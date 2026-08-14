@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Porthole</string>
+    <string name="channel_connection_name">Connection</string>
+    <string name="channel_connection_desc">Shows while Porthole is connected to a panel.</string>
+    <string name="channel_attention_name">Needs you</string>
+    <string name="channel_attention_desc">Fires when a Claude session is waiting for an answer.</string>
+</resources>

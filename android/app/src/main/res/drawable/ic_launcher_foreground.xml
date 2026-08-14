@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A brass porthole rim with a reflection sweep, kept inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#0A1013"
+        android:pathData="M54,25 m-29,0 a29,29 0 1,0 58,0 a29,29 0 1,0 -58,0" />
+    <path
+        android:strokeColor="#C9A227"
+        android:strokeWidth="4"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 m-29,0 a29,29 0 1,0 58,0 a29,29 0 1,0 -58,0" />
+    <path
+        android:strokeColor="#8A7326"
+        android:strokeWidth="1"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.20"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,42 A29,29 0 0,1 52,30" />
+    <group>
+        <path android:fillColor="#4FB286" android:pathData="M42,64 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+        <path android:fillColor="#4FB286" android:pathData="M54,64 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+        <path android:fillColor="#4FB286" android:pathData="M66,64 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+    </group>
+    <path
+        android:fillColor="#D9E5E8"
+        android:fillAlpha="0.55"
+        android:pathData="M42,46 h24 a2.6,2.6 0 0,1 0,5.2 h-24 a2.6,2.6 0 0,1 0,-5.2 z" />
+</vector>

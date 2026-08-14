@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose supplies the real colours. This only needs to stop a white flash on launch. -->
+    <style name="Theme.Porthole" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/hull</item>
+        <item name="android:statusBarColor">@color/deck</item>
+        <item name="android:navigationBarColor">@color/hull</item>
+    </style>
+</resources>

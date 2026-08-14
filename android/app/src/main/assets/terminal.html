@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #0a1013; overflow: hidden; }
+  #term { height: 100%; width: 100%; }
+  .xterm { padding: 4px 2px 2px 6px; height: 100%; }
+  .xterm-viewport::-webkit-scrollbar { width: 6px; }
+  .xterm-viewport::-webkit-scrollbar-thumb { background: #2f4a53; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="term"></div>
+
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script src="addon-unicode11.js"></script>
+<script>
+/*
+  A renderer and nothing more. The native side owns the connection, decides what is on
+  screen, and receives every keystroke. This page holds no token, no socket and no
+  session state, so the system destroying the WebView costs nothing but a repaint.
+*/
+
+const term = new Terminal({
+  allowProposedApi: true,
+  cursorBlink: true,
+  fontFamily: "'Droid Sans Mono', 'Roboto Mono', monospace",
+  fontSize: 11,
+  lineHeight: 1.1,
+  scrollback: 4000,
+  theme: {
+    background: '#0a1013', foreground: '#d9e5e8', cursor: '#c9a227', cursorAccent: '#0a1013',
+    selectionBackground: 'rgba(201,162,39,.28)',
+    black: '#0d1418', red: '#e8563f', green: '#4fb286', yellow: '#c9a227',
+    blue: '#5aa9d6', magenta: '#b98cd1', cyan: '#5fbfb3', white: '#d9e5e8',
+    brightBlack: '#5b7178', brightRed: '#ff7a63', brightGreen: '#6fd0a4', brightYellow: '#e3bd44',
+    brightBlue: '#7cc4ea', brightMagenta: '#d3a9e6', brightCyan: '#7fd8cc', brightWhite: '#f2f7f8'
+  }
+});
+
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+
+// Must match the server's headless mirror. If the two disagree on how wide a character
+// is, the snapshot wraps differently from the live stream and the box drawing tears.
+term.loadAddon(new Unicode11Addon.Unicode11Addon());
+term.unicode.activeVersion = '11';
+
+term.open(document.getElementById('term'));
+
+term.onData((data) => {
+  if (window.Bridge && Bridge.input) Bridge.input(data);
+});
+
+/*
+  Reporting a size is authoritative when this phone is the only viewer, so a wrong
+  number resizes somebody's real session. The first layout pass runs before Compose has
+  given the WebView any height, and fitting against that produced a 57x5 terminal that
+  Claude dutifully redrew into, leaving an apparently empty screen.
+
+  So: refuse to report until the element has plausible dimensions, and watch the element
+  itself rather than the window, because an Android WebView does not reliably fire a
+  window resize when its container is laid out.
+*/
+const host = document.getElementById('term');
+
+function reportSize() {
+  if (!host || host.clientHeight < 120 || host.clientWidth < 120) return;
+  try { fit.fit(); } catch (e) { return; }
+  if (term.rows < 8 || term.cols < 20) return;
+  if (window.Bridge && Bridge.resized) Bridge.resized(term.cols, term.rows);
+}
+
+let resizeTimer = null;
+function scheduleReport() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(reportSize, 150);
+}
+
+window.addEventListener('resize', scheduleReport);
+if (window.ResizeObserver) new ResizeObserver(scheduleReport).observe(host);
+
+/* Called from Kotlin via evaluateJavascript. */
+window.Porthole = {
+  write(text) { term.write(text); },
+  reset() { term.reset(); },
+  resize(cols, rows) {
+    try { term.resize(cols, rows); } catch (e) {}
+  },
+  fit() { reportSize(); },
+  focus() { term.focus(); },
+  measure() { return JSON.stringify({ cols: term.cols, rows: term.rows }); }
+};
+
+// Ready fires regardless of layout, so the native side can start painting. The size is
+// reported separately, once the element is genuinely measurable.
+requestAnimationFrame(() => {
+  if (window.Bridge && Bridge.ready) Bridge.ready(term.cols, term.rows);
+  scheduleReport();
+});
+</script>
+</body>
+</html>

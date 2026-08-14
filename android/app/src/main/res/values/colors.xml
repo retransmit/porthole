@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The web panel's palette, carried over: a ship's bridge at night. Instruments are
+  dimmed to protect night vision, so the ground is a deep blue-green rather than black,
+  and the accent is brass, the material of the rim you look through. Status colours are
+  the vessel's own running lights, port red and starboard green.
+-->
+<resources>
+    <color name="hull">#FF0D1418</color>
+    <color name="deck">#FF131F24</color>
+    <color name="brass">#FFC9A227</color>
+    <color name="foam">#FFD9E5E8</color>
+</resources>

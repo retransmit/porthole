@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Panels are reached over plain HTTP on a tailnet, where the network itself is the
+  encrypted layer: WireGuard end to end, and only devices in your tailnet can route to
+  it at all. Requiring TLS on top would mean every user obtaining a certificate before
+  the app worked at all, which is the friction this app exists to remove.
+
+  If you front the panel with `tailscale serve`, the app uses HTTPS automatically.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

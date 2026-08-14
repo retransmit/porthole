@@ -8,6 +8,14 @@ node_modules/
 
 docs/
 
+# android build output and machine-local sdk paths
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+
 # logs and scratch
 *.log
 npm-debug.log*
