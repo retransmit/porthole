@@ -12,6 +12,8 @@ import { attachWebSocket } from '../src/ws.js';
 import { Notifier } from '../src/notify.js';
 import { buildUrl, chooseBindHost, runTailscale, tailscaleCandidates, tailscaleIPv4, tailscaleSelf } from '../src/net.js';
 import { listSessions } from '../src/history.js';
+import { buildPairingUri, mintPairingCode, PAIRING_TTL_MS } from '../src/pairing.js';
+import QRCode from 'qrcode';
 
 const args = process.argv.slice(2);
 const command = args[0] ?? 'start';
@@ -118,6 +120,7 @@ async function start() {
     manager,
     log,
     allowedOrigins,
+    stateDir,
     flags: () => ({ viewersCanBrowseFiles: config.viewersCanBrowseFiles }),
   });
 
@@ -173,6 +176,39 @@ function invite() {
   } catch (err) {
     console.error(`could not mint invite: ${err.message}`);
     process.exit(1);
+  }
+}
+
+async function pair() {
+  const role = flag('role', 'control');
+  const label = flag('label', 'phone');
+  const port = Number(flag('port', process.env.PORTHOLE_PORT ?? 7317));
+
+  const [ip, self] = await Promise.all([tailscaleIPv4(), tailscaleSelf()]);
+  const host = flag('host') ?? self?.dnsName?.replace(/\.$/, '') ?? ip ?? '127.0.0.1';
+
+  let minted;
+  try {
+    minted = mintPairingCode(config, { role, label });
+  } catch (err) {
+    console.error(`could not create a pairing code: ${err.message}`);
+    process.exit(1);
+  }
+  saveConfig(stateDir, config);
+
+  const uri = buildPairingUri({ host, port, code: minted.code, name: self?.hostName ?? host });
+
+  console.log('');
+  console.log(await QRCode.toString(uri, { type: 'terminal', small: true }));
+  console.log(`  Scan this in the Porthole app to pair as ${bold(minted.role)}.`);
+  console.log('');
+  console.log(`  ${dim('code')}  ${bold(minted.code)}   ${dim('(if the camera will not focus)')}`);
+  console.log(`  ${dim('panel')} ${host}:${port}`);
+  console.log(`  ${dim('valid')} ${PAIRING_TTL_MS / 60000} minutes, one use only`);
+  console.log('');
+  if (minted.role === 'control') {
+    console.log(`  ${yellow('!')} A control pairing can run commands on this machine as you.`);
+    console.log('');
   }
 }
 
@@ -240,6 +276,10 @@ function help() {
     --role view|control  default view
     --label <name>       who it is for
 
+  ${bold('pair')}                   show a QR to pair the Android app
+    --role view|control  default control
+    --label <name>       which device it is
+
   ${bold('invites')}                list invites
   ${bold('revoke')} <id>            revoke one
   ${bold('ls')}                     list resumable past sessions
@@ -247,7 +287,7 @@ function help() {
 `);
 }
 
-const commands = { start, invite, invites, revoke, ls, 'tailscale-serve': tailscaleServe, help };
+const commands = { start, invite, invites, revoke, ls, pair, 'tailscale-serve': tailscaleServe, help };
 
 const handler = commands[command];
 if (!handler) {

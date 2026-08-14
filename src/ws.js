@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
 import { can, checkHandshakeOrigin, extractToken } from './auth.js';
-import { resolveToken } from './config.js';
+import { reloadIfChanged, resolveToken } from './config.js';
 import { normaliseRemoteAddress, tailscaleWhois } from './net.js';
 
 export const PROTOCOL_VERSION = 1;
@@ -22,6 +22,7 @@ export function attachWebSocket({
   server,
   config,
   manager,
+  stateDir = null,
   log = () => {},
   flags = () => ({}),
   allowedOrigins = [],
@@ -39,6 +40,9 @@ export function attachWebSocket({
       socket.destroy();
       return;
     }
+
+    // A phone that just paired holds a token this process has never seen.
+    if (stateDir) reloadIfChanged(stateDir, config);
 
     const token = extractToken(req);
     const identity = token ? resolveToken(config, token) : null;

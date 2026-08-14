@@ -28,17 +28,68 @@ function defaults() {
     version: CONFIG_VERSION,
     adminToken: newToken(),
     invites: [],
+    pairings: [],
     viewersCanBrowseFiles: false,
     vapid: null,
   };
 }
 
+/**
+ * Last-seen file contents per config object, kept outside the object so it never
+ * reaches disk. Used to tell a foreign write apart from our own.
+ *
+ * Contents rather than mtime deliberately. Modification times have millisecond
+ * granularity, so a write landing in the same millisecond as the read is invisible,
+ * and minting an invite moments after the panel starts is exactly that case. The file
+ * is a few kilobytes, so reading it is cheaper than being subtly wrong.
+ */
+const seenContent = new WeakMap();
+
+function readRaw(dir) {
+  try {
+    return fs.readFileSync(configPath(dir), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Adopt changes another process made to the config file.
+ *
+ * The CLI and the running server are separate processes over one file. The server reads
+ * it once at startup, so without this an invite minted by `porthole invite` is rejected
+ * by the panel it was meant to open. The config object is mutated in place because the
+ * http and websocket layers closed over that exact reference.
+ *
+ * @returns {boolean} true when a foreign change was adopted
+ */
+export function reloadIfChanged(dir, config) {
+  const raw = readRaw(dir);
+  if (raw === null) return false;
+  if (seenContent.get(config) === raw) return false;
+
+  const fresh = loadConfig(dir);
+
+  config.adminToken = fresh.adminToken;
+  config.invites = fresh.invites;
+  config.pairings = fresh.pairings;
+  config.viewersCanBrowseFiles = fresh.viewersCanBrowseFiles;
+  config.vapid = fresh.vapid ?? config.vapid;
+  config.pushSubscriptions = fresh.pushSubscriptions ?? config.pushSubscriptions ?? [];
+
+  seenContent.set(config, raw);
+  return true;
+}
+
 export function loadConfig(dir) {
   fs.mkdirSync(dir, { recursive: true });
 
+  // Keep the exact bytes as well as the parsed form, so change detection can compare
+  // file contents rather than a re-serialisation that would differ in formatting.
+  const text = readRaw(dir);
   let raw = null;
   try {
-    raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
+    raw = text === null ? null : JSON.parse(text);
   } catch {
     raw = null;
   }
@@ -51,13 +102,17 @@ export function loadConfig(dir) {
     return fresh;
   }
 
-  return {
+  const config = {
     version: CONFIG_VERSION,
     adminToken: raw.adminToken,
     invites: Array.isArray(raw.invites) ? raw.invites : [],
+    pairings: Array.isArray(raw.pairings) ? raw.pairings : [],
     viewersCanBrowseFiles: raw.viewersCanBrowseFiles === true,
     vapid: raw.vapid ?? null,
+    pushSubscriptions: Array.isArray(raw.pushSubscriptions) ? raw.pushSubscriptions : [],
   };
+  seenContent.set(config, text);
+  return config;
 }
 
 /**
@@ -72,6 +127,8 @@ export function saveConfig(dir, cfg) {
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, json, { mode: 0o600 });
   fs.renameSync(tmp, file);
+  // Record our own write so it is not mistaken for a foreign change on the next check.
+  seenContent.set(cfg, json);
   return file;
 }
 

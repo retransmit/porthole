@@ -4,7 +4,75 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { loadConfig, mintInvite, revokeInvite, resolveToken, saveConfig } from '../src/config.js';
+import {
+  loadConfig,
+  mintInvite,
+  reloadIfChanged,
+  revokeInvite,
+  resolveToken,
+  saveConfig,
+} from '../src/config.js';
+
+/**
+ * The CLI and the running server are separate processes sharing one config file. The
+ * server loaded it once at startup, so without this an invite minted by `porthole
+ * invite` is rejected by the very panel it was meant to open, with a bare 401 and no
+ * hint as to why.
+ */
+describe('reloadIfChanged()', () => {
+  test('reports no change when the file has not been touched', () => {
+    const cfg = loadConfig(dir);
+    assert.equal(reloadIfChanged(dir, cfg), false);
+  });
+
+  test('picks up an invite another process minted', () => {
+    const server = loadConfig(dir);
+
+    // A second process, standing in for the CLI.
+    const cli = loadConfig(dir);
+    const invite = mintInvite(cli, { role: 'view', label: 'alice' });
+    saveConfig(dir, cli);
+
+    assert.equal(resolveToken(server, invite.token), null, 'not visible before reload');
+    assert.equal(reloadIfChanged(dir, server), true);
+    assert.equal(resolveToken(server, invite.token).label, 'alice');
+  });
+
+  test('keeps the same config object, since the server holds a reference to it', () => {
+    const server = loadConfig(dir);
+    const cli = loadConfig(dir);
+    mintInvite(cli, { role: 'view', label: 'bob' });
+    saveConfig(dir, cli);
+
+    const before = server;
+    reloadIfChanged(dir, server);
+    assert.equal(server, before);
+    assert.equal(server.invites.length, 1);
+  });
+
+  test('picks up a pairing code another process minted', () => {
+    const server = loadConfig(dir);
+    const cli = loadConfig(dir);
+    cli.pairings = [{ canonical: 'ABCD', role: 'view', label: 'phone', expiresAt: Date.now() + 60_000, claimed: false }];
+    saveConfig(dir, cli);
+
+    reloadIfChanged(dir, server);
+    assert.equal(server.pairings.length, 1);
+  });
+
+  test('does not reload in response to the server saving its own config', () => {
+    const cfg = loadConfig(dir);
+    mintInvite(cfg, { role: 'view', label: 'self' });
+    saveConfig(dir, cfg);
+    assert.equal(reloadIfChanged(dir, cfg), false, 'our own write is not a foreign change');
+  });
+
+  test('reports no change when the config file is missing', () => {
+    const cfg = loadConfig(dir);
+    fs.rmSync(path.join(dir, 'config.json'));
+    assert.equal(reloadIfChanged(dir, cfg), false);
+  });
+});
 
 let dir;
 

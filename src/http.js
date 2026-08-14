@@ -13,7 +13,8 @@ import {
   serializeCookie,
   safeEqual,
 } from './auth.js';
-import { mintInvite, resolveToken, revokeInvite, saveConfig } from './config.js';
+import { mintInvite, reloadIfChanged, resolveToken, revokeInvite, saveConfig } from './config.js';
+import { claimPairingCode } from './pairing.js';
 import { listSessions } from './history.js';
 import { listDir, readTextFile } from './files.js';
 import { gitDiff, gitStatus } from './git.js';
@@ -309,12 +310,44 @@ export function createHttpServer({
       }
     }
 
+    /*
+     * The only unauthenticated endpoint, and deliberately exempt from the origin guard:
+     * a phone pairing for the first time has no cookie and no Origin, so there is no
+     * ambient credential for a hostile page to abuse here. What protects it instead is
+     * that codes are twelve characters, live for two minutes, work once, and a wrong
+     * guess counts against the rate limiter.
+     */
+    if (url.pathname === '/api/pair/claim' && req.method === 'POST') {
+      if (limiter.blocked(peer)) return text(res, 429, 'too many attempts, wait a minute');
+      try {
+        reloadIfChanged(stateDir, config);
+        const body = await readBody(req);
+        const claimed = claimPairingCode(config, body.code);
+
+        if (!claimed) {
+          limiter.fail(peer);
+          log(`failed pairing attempt from ${peer}`);
+          return json(res, 400, { error: 'that pairing code is not valid, or has already been used' });
+        }
+
+        saveConfig(stateDir, config);
+        limiter.succeed(peer);
+        log(`paired ${claimed.label} (${claimed.role}) from ${peer}`);
+        return json(res, 201, { v: 1, ...claimed });
+      } catch (err) {
+        return json(res, 400, { error: err.message });
+      }
+    }
+
     if (limiter.blocked(peer)) return text(res, 429, 'too many failed attempts, wait a minute');
 
     if (!mutationAllowed(req)) {
       log(`refused ${req.method} ${url.pathname} from origin ${req.headers.origin ?? '(none)'}`);
       return json(res, 403, { error: 'this request did not come from the panel' });
     }
+
+    // The CLI may have minted an invite or a pairing code since we started.
+    reloadIfChanged(stateDir, config);
 
     const presented = extractToken(req);
     const identity = presented ? resolveToken(config, presented) : null;
