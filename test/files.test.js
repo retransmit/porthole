@@ -36,7 +36,12 @@ describe('resolveWithin() jail', () => {
     assert.equal(resolveWithin(root, '.'), path.resolve(root));
   });
 
-  test('accepts backslash separators', () => {
+  test('accepts backslash separators on windows', (t) => {
+    // On POSIX a backslash is a perfectly legal character in a filename, not a
+    // separator, so "src\main.js" there names one file rather than two path segments.
+    // Treating it as a separator would make a real file unreachable. It is not a jail
+    // concern either way: "..\..\etc" on Linux is a strange name inside the root.
+    if (process.platform !== 'win32') return t.skip('posix treats a backslash as a literal character');
     assert.equal(resolveWithin(root, 'src\\main.js'), path.join(root, 'src', 'main.js'));
   });
 

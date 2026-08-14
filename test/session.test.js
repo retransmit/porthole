@@ -76,7 +76,10 @@ describe('Session', () => {
 
   test('forwards written input to the child', async (t) => {
     const s = nodeSession(
-      'process.stdin.setEncoding("utf8"); process.stdin.on("data", (d) => { if (d.includes("\\r")) { process.stdout.write("\\r\\nGOT[" + d.trim() + "]\\r\\n"); process.exit(0); } });',
+      // Accept either terminator: a POSIX line discipline translates the carriage
+      // return we send into a newline (ICRNL) before the child ever sees it, so
+      // matching only on CR passes on Windows and hangs on Linux.
+      'process.stdin.setEncoding("utf8"); process.stdin.on("data", (d) => { if (d.includes("\\r") || d.includes("\\n")) { process.stdout.write("\\r\\nGOT[" + d.trim() + "]\\r\\n"); process.exit(0); } });',
     );
     t.after(() => s.destroy());
 
