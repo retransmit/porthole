@@ -41,6 +41,36 @@ export function buildClaudeArgs({ sessionId = null, resumeId = null, settingsPat
   return args;
 }
 
+/**
+ * Variables that identify the Claude Code process we are running inside.
+ *
+ * Porthole hands its own environment to the sessions it spawns, which is what you want
+ * for PATH, HOME and credentials. It is emphatically not what you want for these: a
+ * child that inherits CLAUDE_CODE_CHILD_SESSION concludes it is a nested sub-agent and
+ * stops writing a transcript, so the session never appears in history and can never be
+ * resumed. That failure is silent, and only visible as a one-line notice inside the
+ * terminal itself.
+ *
+ * This matters whenever the panel is started from inside a Claude Code session, which
+ * is an entirely reasonable thing to do.
+ */
+const INHERITED_SESSION_MARKERS = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_SSE_PORT',
+  'CLAUDE_PID',
+];
+
+/** @returns {Record<string, string>} a copy with the parent's session identity removed */
+export function sanitiseEnv(env = process.env) {
+  const clean = { ...env };
+  for (const key of INHERITED_SESSION_MARKERS) delete clean[key];
+  return clean;
+}
+
 export function resolveClaudePath({ override = null, env = process.env, platform = process.platform } = {}) {
   if (override) return override;
   if (env.PORTHOLE_CLAUDE_PATH) return env.PORTHOLE_CLAUDE_PATH;

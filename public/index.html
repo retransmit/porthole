@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1418">
+<title>Porthole</title>
+<!-- Manifests are fetched without credentials by default, which a token-gated panel
+     answers with a 401. use-credentials sends the cookie so installing works. -->
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="stylesheet" href="/vendor/xterm.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <header class="bridge">
+    <button class="rail-toggle" id="railToggle" aria-label="Show sessions" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+
+    <div class="mark">
+      <span class="mark-ring" aria-hidden="true"></span>
+      <span class="mark-word">Porthole</span>
+    </div>
+
+    <div class="bridge-meta">
+      <span class="host" id="host"></span>
+      <span class="linkstate" id="linkstate" data-state="connecting">connecting</span>
+    </div>
+
+    <div class="crew" id="crew" aria-label="People connected"></div>
+  </header>
+
+  <aside class="rail" id="rail">
+    <div class="rail-scroll">
+      <div class="rail-head">
+        <h2>Sessions</h2>
+        <button class="ghost" id="newSession" hidden>Start one</button>
+      </div>
+      <ul class="sessions" id="sessions"></ul>
+      <p class="empty" id="sessionsEmpty">Nothing running yet.</p>
+
+      <div class="rail-head">
+        <h2>Resume</h2>
+      </div>
+      <ul class="history" id="history"></ul>
+      <p class="empty" id="historyEmpty">No past conversations found.</p>
+    </div>
+  </aside>
+
+  <main class="deck">
+
+    <div class="scope-wrap">
+      <div class="scope" id="scope">
+        <div class="scope-glass" aria-hidden="true"></div>
+        <div class="term" id="term"></div>
+      </div>
+
+      <div class="scope-idle" id="scopeIdle">
+        <p class="scope-idle-title">Nothing on screen</p>
+        <p class="scope-idle-body">Pick a session on the left, or resume one you left behind.</p>
+      </div>
+    </div>
+
+    <div class="attention" id="attention" hidden>
+      <span class="attention-dot" aria-hidden="true"></span>
+      <span id="attentionText">Claude is waiting for you</span>
+      <button class="ghost" id="attentionDismiss">Dismiss</button>
+    </div>
+
+    <div class="keys" id="keys" aria-label="Terminal keys">
+      <button data-key="\x1b">esc</button>
+      <button data-key="\t">tab</button>
+      <button data-key="\x1b[A">&uarr;</button>
+      <button data-key="\x1b[B">&darr;</button>
+      <button data-key="\x1b[Z">&#8679;tab</button>
+      <button data-key="\x03">ctrl-c</button>
+      <button data-key="/">/</button>
+      <button data-key="\r">enter</button>
+      <button id="fitToggle" title="Resize the session to fit this screen">fit</button>
+    </div>
+
+    <form class="helm" id="helm">
+      <textarea id="prompt" rows="1" placeholder="Type a prompt, then send" autocomplete="off"
+                autocapitalize="sentences" spellcheck="false"></textarea>
+      <div class="helm-actions">
+        <button type="button" class="ghost" id="helmLock" title="Only you can type until you release it">Take the helm</button>
+        <button type="button" class="ghost" id="filesOpen">Files</button>
+        <button type="submit" class="primary" id="send">Send</button>
+      </div>
+    </form>
+
+    <footer class="gauges">
+      <span id="sizeGauge"></span>
+      <span id="helmGauge"></span>
+      <span id="roleGauge"></span>
+    </footer>
+
+  </main>
+
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <div class="drawer-tabs">
+        <button class="tab is-on" data-tab="files">Files</button>
+        <button class="tab" data-tab="diff">Changes</button>
+      </div>
+      <button class="ghost" id="drawerClose">Close</button>
+    </div>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="drawer-body" id="drawerBody"></div>
+  </div>
+
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<dialog class="sheet" id="newSheet">
+  <form method="dialog" id="newForm">
+    <h3>Start a session</h3>
+    <label>Folder
+      <input name="cwd" id="newCwd" placeholder="E:\Programs\my-project" spellcheck="false" required>
+    </label>
+    <label>Name <span class="hint">optional</span>
+      <input name="label" id="newLabel" placeholder="defaults to the folder name" spellcheck="false">
+    </label>
+    <div class="sheet-actions">
+      <button value="cancel" class="ghost">Cancel</button>
+      <button value="start" class="primary">Start</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/addon-web-links.js"></script>
+<script src="/vendor/addon-unicode11.js"></script>
+<script src="/vendor/addon-webgl.js"></script>
+<script src="/app.js" type="module"></script>
+
+</body>
+</html>

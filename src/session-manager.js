@@ -34,6 +34,7 @@ export class SessionManager extends EventEmitter {
    * hand to `claude --session-id`, which is what makes resume reliable.
    */
   create({
+    id: explicitId = null,
     cwd,
     label,
     resumeId = null,
@@ -44,7 +45,9 @@ export class SessionManager extends EventEmitter {
     rows = this.defaultRows,
     meta = {},
   }) {
-    const id = resumeId ?? crypto.randomUUID();
+    // The caller may need the id before this point, since `claude --session-id` has to
+    // receive it on the command line and the hook settings file is named after it.
+    const id = explicitId ?? resumeId ?? crypto.randomUUID();
 
     const session = this.createSessionFn({ id, label, cwd, file, args, env, cols, rows, meta });
 
@@ -198,6 +201,9 @@ export class SessionManager extends EventEmitter {
     if (changed) {
       this.broadcast(id, { t: 'sized', v: 1, sessionId: id, cols: next.cols, rows: next.rows, by: next.by });
       this.emit('sized', { sessionId: id, ...next });
+      // The sidebar shows each session's geometry, so it has to hear about this too or
+      // it keeps displaying whatever the size was when the client first attached.
+      this.emit('sessions', this.list());
     }
     return next;
   }

@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { defaultStateDir, loadConfig, mintInvite, revokeInvite, saveConfig } from '../src/config.js';
 import { SessionManager } from '../src/session-manager.js';
-import { buildClaudeArgs, resolveClaudePath } from '../src/claude.js';
+import { buildClaudeArgs, resolveClaudePath, sanitiseEnv } from '../src/claude.js';
 import { buildHookSettings, removeHookSettings, writeHookSettings } from '../src/hooks.js';
 import { createHttpServer } from '../src/http.js';
 import { attachWebSocket } from '../src/ws.js';
@@ -79,7 +79,7 @@ async function start() {
       resumeId,
       file: claudePath,
       args: buildClaudeArgs({ sessionId: resumeId ? null : id, resumeId, settingsPath }),
-      env: { ...process.env, PORTHOLE: '1' },
+      env: { ...sanitiseEnv(process.env), PORTHOLE: '1' },
     });
 
     rec.session.once('exit', () => removeHookSettings(stateDir, id));

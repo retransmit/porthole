@@ -1,7 +1,45 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildClaudeArgs, resolveClaudePath } from '../src/claude.js';
+import { buildClaudeArgs, resolveClaudePath, sanitiseEnv } from '../src/claude.js';
+
+describe('sanitiseEnv()', () => {
+  test('drops the marker that tells Claude it is a nested child session', () => {
+    // Left in place, the spawned session decides it is a sub-agent and stops writing a
+    // transcript, which silently breaks resume for every session the panel starts.
+    const out = sanitiseEnv({ PATH: '/usr/bin', CLAUDE_CODE_CHILD_SESSION: '1' });
+    assert.equal(out.CLAUDE_CODE_CHILD_SESSION, undefined);
+  });
+
+  test('drops the parent session identity and ipc handles', () => {
+    const out = sanitiseEnv({
+      CLAUDECODE: '1',
+      CLAUDE_CODE_SESSION_ID: 'abc',
+      CLAUDE_CODE_SSE_PORT: '1234',
+      CLAUDE_CODE_ENTRYPOINT: 'cli',
+      CLAUDE_CODE_EXECPATH: 'C:/claude.exe',
+      CLAUDE_PID: '999',
+    });
+    for (const key of Object.keys(out)) {
+      assert.fail(`expected nothing to survive, kept ${key}`);
+    }
+  });
+
+  test('keeps everything unrelated', () => {
+    const out = sanitiseEnv({ PATH: '/usr/bin', HOME: '/home/me', TERM: 'xterm-256color' });
+    assert.deepEqual(out, { PATH: '/usr/bin', HOME: '/home/me', TERM: 'xterm-256color' });
+  });
+
+  test('keeps user preferences that are not session identity', () => {
+    assert.equal(sanitiseEnv({ CLAUDE_EFFORT: 'max' }).CLAUDE_EFFORT, 'max');
+  });
+
+  test('does not mutate the environment it was given', () => {
+    const original = { CLAUDECODE: '1', PATH: '/usr/bin' };
+    sanitiseEnv(original);
+    assert.equal(original.CLAUDECODE, '1');
+  });
+});
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Porthole">
+  <rect width="512" height="512" rx="96" fill="#0d1418"/>
+  <circle cx="256" cy="256" r="150" fill="#0a1013" stroke="#c9a227" stroke-width="20"/>
+  <circle cx="256" cy="256" r="128" fill="none" stroke="#8a7326" stroke-width="4"/>
+  <path d="M150 190a150 150 0 0 1 96-56" fill="none" stroke="#ffffff" stroke-opacity=".18" stroke-width="14" stroke-linecap="round"/>
+  <g fill="#4fb286">
+    <circle cx="200" cy="300" r="11"/>
+    <circle cx="256" cy="300" r="11"/>
+    <circle cx="312" cy="300" r="11"/>
+  </g>
+  <rect x="196" y="216" width="120" height="14" rx="7" fill="#d9e5e8" fill-opacity=".55"/>
+</svg>
