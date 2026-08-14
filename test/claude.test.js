@@ -64,4 +64,19 @@ describe('resolveClaudePath()', () => {
     const got = resolveClaudePath({ env: {} });
     assert.match(got, /claude/i);
   });
+
+  // The panel is meant to run on Windows, Linux and macOS, so the platform has to be
+  // injectable. Otherwise these branches are only ever exercised on whichever machine
+  // happens to run the tests.
+  test('asks for claude.exe on windows', () => {
+    assert.equal(resolveClaudePath({ env: {}, platform: 'win32' }), 'claude.exe');
+  });
+
+  test('asks for plain claude on linux', () => {
+    assert.equal(resolveClaudePath({ env: {}, platform: 'linux' }), 'claude');
+  });
+
+  test('asks for plain claude on macos', () => {
+    assert.equal(resolveClaudePath({ env: {}, platform: 'darwin' }), 'claude');
+  });
 });

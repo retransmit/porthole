@@ -41,9 +41,10 @@ export function buildClaudeArgs({ sessionId = null, resumeId = null, settingsPat
   return args;
 }
 
-export function resolveClaudePath({ override = null, env = process.env } = {}) {
+export function resolveClaudePath({ override = null, env = process.env, platform = process.platform } = {}) {
   if (override) return override;
   if (env.PORTHOLE_CLAUDE_PATH) return env.PORTHOLE_CLAUDE_PATH;
   // A bare name lets the OS resolve it on PATH, which is where the installer puts it.
-  return process.platform === 'win32' ? 'claude.exe' : 'claude';
+  // The platform is injectable so this branch is testable off the platform in question.
+  return platform === 'win32' ? 'claude.exe' : 'claude';
 }
