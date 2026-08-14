@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# Porthole runtime state. Holds the admin token, invite tokens and VAPID keys.
+# Must never be committed.
+.porthole/
+
+
+docs/
+
+# logs and scratch
+*.log
+npm-debug.log*
+.env
+.env.*
+
+# os cruft
+Thumbs.db
+desktop.ini
+.DS_Store
