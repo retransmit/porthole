@@ -5,6 +5,10 @@
   "type": "module",
   "description": "Drive and share your local Claude Code sessions from a browser, over Tailscale.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/retransmit/porthole.git"
+  },
   "engines": {
     "node": ">=20.11"
   },
